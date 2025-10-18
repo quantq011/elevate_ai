@@ -13,6 +13,7 @@ class Person:
     timezone: Optional[str] = None
     languages: List[str] = field(default_factory=list)
     availability: Optional[str] = None
+    hotline: Optional[str] = None 
     source_path: Optional[str] = None
 
 @dataclass
@@ -68,6 +69,7 @@ class ContactsStore:
                         timezone=data.get("timezone"),
                         languages=list(data.get("languages",[]) or []),
                         availability=data.get("availability"),
+                        hotline=data.get("hotline"),
                         source_path=path
                     ))
                 elif t == "customer":

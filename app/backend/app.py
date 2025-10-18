@@ -127,12 +127,22 @@ TOOLS_SPEC = [
             }
         }
     },
+    {
+        "type":"function",
+        "function":{
+            "name":"get_it_contact",
+            "description":"Return IT Helpdesk contact (email + hotline) from contacts documents.",
+            "parameters":{"type":"object","properties":{}}
+        }
+    }
 ]
 
 SYSTEM_PROMPT = (
     "You are an Employee Onboarding Assistant. "
     "Answer clearly, cite policy names if available, and call tools for factual data. "
     "If data is missing (e.g., email), ask a brief follow-up."
+    "For IT access/intake questions, FIRST provide the official IT contact channel "
+    "(email + hotline) before asking for missing details. "
     "If user asks about development setup/specifications/tasks, prefer search_docs first."
     "If required info is missing (e.g., customer name not given), ask a brief follow-up."
     "Use tools for factual data."
@@ -140,6 +150,7 @@ SYSTEM_PROMPT = (
     "For customer details, prefer get_customer_info(name/domain)."
     "When the user asks who should support a technology topic (e.g., Angular, Java Spring Boot), "
     "First normalize the topic (use extract_topic helper in the backend), then call lookup_contact(area=<topic>)."
+    "Only then, if the user wants to proceed with a ticket, collect email/system."
 )
 
 def _call_tool(name: str, args_json: str) -> Dict[str, Any]:
@@ -161,6 +172,19 @@ def _call_tool(name: str, args_json: str) -> Dict[str, Any]:
     if name == "suggest_support":
         res = CONTACTS.suggest_support(**args)
         return {"people":[p.__dict__ for p in res]}
+    if name == "get_it_contact":
+        # Pick the first 'Helpdesk' or IT person; prefer one with hotline
+        best = None
+        with_hotline = [p for p in CONTACTS.people if (getattr(p, "hotline", None)) and ("helpdesk" in p.role.lower() or "helpdesk" in p.name.lower())]
+        if with_hotline:
+            best = with_hotline[0]
+        else:
+            candidates = [p for p in CONTACTS.people if ("helpdesk" in p.role.lower() or "it" in (p.department or "").lower())]
+            if candidates:
+                best = candidates[0]
+        if best:
+            return {"email": best.email, "hotline": getattr(best, "hotline", None), "name": best.name, "role": best.role}
+        return {"email": None, "hotline": None}
     return {"error": "unknown tool"}
 
 def _chat_once(messages: List[Dict[str, Any]], tools=TOOLS_SPEC, tool_choice="auto"):
@@ -180,6 +204,21 @@ def chat(payload: Dict[str, Any] = Body(...)):
     msgs: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     msgs += MEM.history()
     msgs.append({"role": "user", "content": user_text})
+
+    low = user_text.lower()
+    if any(k in low for k in ["request it access", "it access", "access request", "quyền truy cập it", "yêu cầu truy cập it"]):
+        # Force a tool call to read IT contact info from documents
+        forced = [{"id":"get_it","type":"function","function":{"name":"get_it_contact","arguments":"{}"}}]
+        patched = [
+            {"role":"system","content":SYSTEM_PROMPT},
+            {"role":"user","content":user_text},
+            {"role":"assistant","content":"", "tool_calls": forced},
+        ]
+        result = _call_tool("get_it_contact", "{}")
+        patched.append({"role":"tool","tool_call_id":"get_it","name":"get_it_contact","content": json.dumps(result)})
+        # Finalize wording
+        final = _chat_once(patched, tools=TOOLS_SPEC, tool_choice="auto")
+        return {"answer": final.choices[0].message.content, "tool_calls": ["get_it_contact"]}
     
     pre_calls = []
     try:
@@ -201,7 +240,7 @@ def chat(payload: Dict[str, Any] = Body(...)):
 
     except Exception:
         pass
-    
+
     # 2) vòng đầu: để model quyết định tool_calls
     first = _chat_once(msgs)
 
