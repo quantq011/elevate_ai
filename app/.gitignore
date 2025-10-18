@@ -1,0 +1,116 @@
+# =========================
+# OS / Editor cruft
+# =========================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+.fleet/
+.history/
+
+# =========================
+# Python build / bytecode
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+build/
+dist/
+.eggs/
+*.egg-info/
+.wheelhouse/
+__pypackages__/
+
+# =========================
+# Virtual envs / uv / pyenv
+# =========================
+.venv/
+.envrc
+.python-version
+# uv lockfile is useful to commit → DO NOT ignore:
+# uv.lock
+
+# =========================
+# Secrets & environment
+# =========================
+.env
+.env.*
+!.env.example            # keep the example committed
+*.pem
+*.key
+*.p12
+*.crt
+.azure/
+# Streamlit secrets
+.streamlit/secrets.toml
+# (optional) keep config examples
+# !.streamlit/config.example.toml
+
+# =========================
+# Logs / runtime caches
+# =========================
+logs/
+*.log
+*.pid
+*.pid.lock
+tmp/
+temp/
+.cache/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.pyre/
+.pytype/
+coverage.xml
+htmlcov/
+.coverage
+.coverage.*
+nosetests.xml
+pytestdebug.log
+
+# =========================
+# Notebooks
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# FastAPI / Uvicorn artifacts
+# =========================
+uvicorn*.log
+
+# =========================
+# Frontend (Streamlit/Gradio/Optionally Angular)
+# =========================
+# Gradio cached examples
+gradio_cached_examples/
+# Angular/Node (in case you add a web client later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.angular/
+.angular/cache/
+dist/
+
+# =========================
+# Databases / local data
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# App-specific
+# =========================
+# Keep your Markdown documents (they are core content).
+# If you store private data within documents/, create a private subfolder and ignore it:
+# documents/private/
+# documents/**/private/
+# Uncomment below if you ever need to exclude all docs and only commit examples:
+# documents/**/*
+# !documents/**/README*.md
+# !documents/**/example-*.md
