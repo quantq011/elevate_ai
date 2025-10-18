@@ -8,7 +8,10 @@ from .docstore import DocStore
 from .contacts_store import ContactsStore
 
 from .memory import ChatMemory
-from .tools import get_policy, create_it_ticket, check_task
+from .tools import (
+    get_policy, create_it_ticket, check_task,
+    list_pending_tasks, list_pending_by_user, summarize_tasks, pretty_summarize
+)
 from .topic_extractor import extract_topic
 
 load_dotenv()
@@ -134,6 +137,26 @@ TOOLS_SPEC = [
             "description":"Return IT Helpdesk contact (email + hotline) from contacts documents.",
             "parameters":{"type":"object","properties":{}}
         }
+    },
+    {
+        "type":"function",
+        "function":{
+            "name":"list_pending",
+            "description":"List all non-done onboarding tasks (pending/in_progress/blocked).",
+            "parameters":{"type":"object","properties":{}}
+        }
+    },
+    {
+        "type":"function",
+        "function":{
+            "name":"list_my_pending",
+            "description":"List non-done tasks for a specific assignee email.",
+            "parameters":{
+                "type":"object",
+                "properties":{"email":{"type":"string"}},
+                "required":["email"]
+            }
+        }
     }
 ]
 
@@ -144,6 +167,8 @@ SYSTEM_PROMPT = (
     "For IT access/intake questions, FIRST provide the official IT contact channel "
     "(email + hotline) before asking for missing details. "
     "If user asks about development setup/specifications/tasks, prefer search_docs first."
+    "For queries like 'pending tasks' or 'my pending tasks', call the appropriate tools "
+    "and then present a concise summary (counts, overdue, due soon) before listing a few items."
     "If required info is missing (e.g., customer name not given), ask a brief follow-up."
     "Use tools for factual data."
     "For 'who to contact' or 'who supports X', prefer lookup_contact(area=topic)."
@@ -185,6 +210,12 @@ def _call_tool(name: str, args_json: str) -> Dict[str, Any]:
         if best:
             return {"email": best.email, "hotline": getattr(best, "hotline", None), "name": best.name, "role": best.role}
         return {"email": None, "hotline": None}
+    if name == "list_pending":
+        tasks = list_pending_tasks()
+        return {"tasks": tasks, "summary": summarize_tasks(tasks), "pretty": pretty_summarize(summarize_tasks(tasks))}
+    if name == "list_my_pending":
+        tasks = list_pending_by_user(args.get("email",""))
+        return {"tasks": tasks, "summary": summarize_tasks(tasks), "pretty": pretty_summarize(summarize_tasks(tasks))}
     return {"error": "unknown tool"}
 
 def _chat_once(messages: List[Dict[str, Any]], tools=TOOLS_SPEC, tool_choice="auto"):
