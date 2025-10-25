@@ -1,3 +1,29 @@
+# employee-chatbot
+
+## ChromaDB integration
+
+This project includes an optional ChromaDB vector store integration for storing and searching embeddings.
+
+Quick start:
+
+- Install dependencies (in your environment):
+
+  pip install -r requirements.txt
+
+- Or using pyproject.toml with your tooling (pip, pipx, or poetry). Ensure `chromadb` and `openai` are installed.
+
+- Seed mock data (from project root):
+
+  python backend\scripts\seed_and_query_chroma.py
+
+- Start the API and use endpoints:
+
+  - POST /chroma/seed to seed documents (body: {docs: [...]})
+  - GET /chroma/search?q=your+query to search the Chroma store
+
+Note: The ChromaStore uses an in-memory Chroma instance by default. For embeddings, set Azure OpenAI environment
+variables (AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY) so the provided OpenAI client can compute embeddings.
+
 # Onboarding Assistant – FastAPI × Streamlit (Azure OpenAI, uv)
 
 A small demo chatbot for **employee onboarding** that answers policy questions, searches your Markdown docs (development/specifications/tasks), and calls tools (e.g., create IT ticket, check task).

@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from .docstore import DocStore
 from .contacts_store import ContactsStore
+from .chromastore import ChromaStore, create_store
+
+from .helper.chromadb_helper import log_turn_to_chroma, retrieve_kb, retrieve_session_mem, to_bullets
 
 from .memory import ChatMemory
 from .tools import (
@@ -20,9 +23,18 @@ ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 DEPLOYMENT = os.getenv("DEPLOYMENT_NAME", "gpt-4o-mini")
 
+ENDPOINT_DB = os.getenv("AZURE_OPENAI_DB_ENDPOINT")
+API_KEY_DB = os.getenv("AZURE_OPENAI_API_DB_KEY")
+DEPLOYMENT_DB = os.getenv("DEPLOYMENT_DB_NAME", "text-embedding-3-small")
+
 client = OpenAI(
     api_key=API_KEY,
     base_url=f"{ENDPOINT}",
+)
+
+clientDb = OpenAI(
+    api_key=API_KEY_DB,
+    base_url=f"{ENDPOINT_DB}",
 )
 
 app = FastAPI(title="Onboarding Copilot API")
@@ -31,6 +43,13 @@ app = FastAPI(title="Onboarding Copilot API")
 MEM = ChatMemory(max_turns=30)
 DOCS = DocStore(root="documents")
 CONTACTS = ContactsStore(root="documents")
+CHROMA = None
+try:
+    CHROMA = create_store(openai_client=clientDb)
+    print("ChromaStore initialized")
+except Exception:
+    CHROMA = None
+    print("ChromaStore not available")
 
 TOOLS_SPEC = [
     {
@@ -188,6 +207,12 @@ def _call_tool(name: str, args_json: str) -> Dict[str, Any]:
         return check_task(**args)
     if name == "search_docs":
         return {"results": DOCS.search(args.get("query", ""), int(args.get("top_k", 5)))}
+    if name == "search_chroma":
+        if CHROMA is None:
+            return {"error": "Chroma not available 1"}
+        q = args.get("query", "")
+        k = int(args.get("top_k", 5))
+        return {"results": CHROMA.query(q, top_k=k)}
     if name == "lookup_contact":
         res = CONTACTS.find_people(**args)
         return {"people":[p.__dict__ for p in res]}
@@ -227,14 +252,43 @@ def _chat_once(messages: List[Dict[str, Any]], tools=TOOLS_SPEC, tool_choice="au
         tool_choice=tool_choice
     )
 
+def my_embedder(texts: List[str]) -> List[List[float]]:
+    # Example using your Azure OpenAI client
+    resp = clientDb.embeddings.create(model=os.getenv("EMBEDDING_DEPLOYMENT"), input=texts)
+    return [d.embedding for d in resp.data]
+
 @app.post("/chat")
 def chat(payload: Dict[str, Any] = Body(...)):
     user_text: str = payload.get("message", "")
     session_id: Optional[str] = payload.get("session_id")  # nơi bạn map nhiều user
+    
+    print("user_text:", user_text)
+    log_turn_to_chroma(
+        store=CHROMA,
+        text=user_text,
+        session_id=session_id,
+        role="user",
+        embedder=my_embedder
+    )
+
+    print("retrieve from KB")
+    # 2) retrieve from KB and session memory
+    kb_hits  = retrieve_kb(store=CHROMA, query_text=user_text, k=3, embedder=my_embedder)
+    print("retrieve from retrieve_session_mem")
+    mem_hits = retrieve_session_mem(store=CHROMA, query_text=user_text, session_id=session_id, k=3, embedder=my_embedder)
+
+    # build a compact context
+    context_parts = []
+    if kb_hits:  context_parts.append("[KB]\n"   + to_bullets(kb_hits))
+    if mem_hits: context_parts.append("[Recent]\n" + to_bullets(mem_hits))
+    extra_context = "\n\n".join(context_parts)
+
     # 1) nạp system + history + user
     msgs: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     msgs += MEM.history()
-    msgs.append({"role": "user", "content": user_text})
+    # msgs.append({"role": "user", "content": user_text})
+
+    msgs.append({"role":"user","content": user_text + ("\n\n" + extra_context if extra_context else "")})
 
     low = user_text.lower()
     if any(k in low for k in ["request it access", "it access", "access request", "quyền truy cập it", "yêu cầu truy cập it"]):
@@ -296,6 +350,7 @@ def chat(payload: Dict[str, Any] = Body(...)):
         # ghi vào memory để duy trì ngữ cảnh
         MEM.add("tool", json.dumps(result), name=tc.function.name, tool_call_id=tc.id)
 
+    print("call to OpenAI API")
     # 4) Gọi lượt cuối để model diễn giải kết quả tools
     final = client.chat.completions.create(
         model=DEPLOYMENT,
@@ -304,4 +359,47 @@ def chat(payload: Dict[str, Any] = Body(...)):
     answer = final.choices[0].message.content
     MEM.add("assistant", answer)
 
+    log_turn_to_chroma(
+        store=CHROMA,
+        text=answer,
+        session_id=session_id,
+        role="assistant", 
+        extra_meta={"tool_calls": 
+                    [tc.function.name for tc in tool_calls]},
+        embedder=my_embedder
+    )
+
     return {"answer": answer, "tool_calls": [tc.function.name for tc in tool_calls]}
+
+
+@app.post("/chroma/seed")
+def seed_chroma(payload: Dict[str, Any] = Body(...)):
+    """Seed the Chroma collection with provided documents. Payload: {docs: [{id, text, metadata}]}
+    If no docs provided, seed with a small set of mock FAQs and knowledge base items.
+    """
+    if CHROMA is None:
+        return {"ok": False, "error": "Chroma not available (install chromadb)"}
+    docs = payload.get("docs")
+    if not docs:
+        # default mock data
+        docs = [
+            {"id": "faq-1", "text": "How do I request IT access? Submit an IT access request via the portal and include justification.", "metadata": {"source": "faq"}},
+            {"id": "kb-1", "text": "Onboarding checklist: create account, set up 2FA, join Slack channels, request software access.", "metadata": {"source": "kb"}},
+            {"id": "faq-2", "text": "Who do I contact for VPN help? Contact IT Helpdesk at it-helpdesk@example.com or hotline +1-800-555-0100.", "metadata": {"source": "faq"}},
+        ]
+    try:
+        CHROMA.upsert_documents(docs)
+        return {"ok": True, "count": len(docs)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/chroma/search")
+def chroma_search(q: str, top_k: int = 5):
+    if CHROMA is None:
+        return {"error": "Chroma not available 2"}
+    try:
+        res = CHROMA.query(q, top_k=top_k, embedder=my_embedder)
+        return {"results": res}
+    except Exception as e:
+        return {"error": str(e)}
