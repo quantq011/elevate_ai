@@ -37,7 +37,7 @@ clientDb = OpenAI(
     base_url=f"{ENDPOINT_DB}",
 )
 
-app = FastAPI(title="Onboarding Copilot API")
+app = FastAPI(title="Onboarding Assistant App")
 
 # đơn giản: mỗi tiến trình giữ 1 memory cho demo
 MEM = ChatMemory(max_turns=30)
