@@ -1,0 +1,14 @@
+.venv/
+node_modules/
+frontend/
+infra/
+notebooks/
+data/
+models/
+assets/
+*.ipynb
+*.csv
+*.parquet
+*.pt
+*.onnx
+*.whl
