@@ -1,7 +1,7 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "backend/api/**/*.py": {
-      "runtime": "python3.12",
       "excludeFiles": "**/{.git,.venv,node_modules,frontend,infra,notebooks,data,models,assets}/**"
     }
   },
