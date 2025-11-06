@@ -1,0 +1,25 @@
+{
+  "functions": {
+    "backend/api/**/*.py": {
+      "runtime": "python3.12",
+      "excludeFiles": [
+        "**/.git/**",
+        "**/.venv/**",
+        "**/node_modules/**",
+        "frontend/**",
+        "infra/**",
+        "notebooks/**",
+        "data/**",
+        "models/**",
+        "assets/**",
+        "**/*.ipynb",
+        "**/*.csv",
+        "**/*.parquet",
+        "**/*.pt",
+        "**/*.onnx",
+        "**/*.whl"
+      ]
+    }
+  },
+  "routes": [{ "src": "/api/(.*)", "dest": "backend/api/index.py" }]
+}
